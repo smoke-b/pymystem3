@@ -295,7 +295,7 @@ class Mystem(object):
         self._procout_no = self._procout.fileno()
         _set_non_blocking(self._procout)
 
-    def analyze(self, text='', file_path=None):
+    def analyze(self, text='', file_path=None, in_one_call=False):
         """
         Make morphology analysis for a text.
 
@@ -304,6 +304,8 @@ class Mystem(object):
         :type   file_path: str
         :param  file_path: alternative mode: if defined, file_path will be used to open utf8 text file for analysis.
                            Argument text is not used in this case.
+        :param  in_one_call: when file_path argument is not used, parse text at one call (for speedup on Windows...)
+        :type   in_one_call: bool
         :returns:       result of morphology analysis.
         :rtype:         dict
         """
@@ -314,6 +316,16 @@ class Mystem(object):
         if self._file_path:
             # file path will be used and passed to mystem.exe
             result.extend(self._analyze_impl(''))
+        elif in_one_call:
+            # parse text in one Mystem call
+            # Mystem may hang during parsing large texts with line breaks when text is passed through stdin.
+            # Replacing '\n' with '\x85' is a crutch for this Mystem bag.
+            text = text.replace('\n', '\x85')
+            result.extend(self._analyze_impl(text))
+            if self._entire_input:
+                for token in result:
+                    if 'analysis' not in token:  # replace back for separators
+                        token['text'] = token['text'].replace('\x85', '\n')
         else:
             for line in text.splitlines():
                 try:
@@ -324,7 +336,7 @@ class Mystem(object):
                     result.extend(self._analyze_impl(line))
         return result
 
-    def lemmatize(self, text='', file_path=None):
+    def lemmatize(self, text='', file_path=None, in_one_call=False):
         """
         Make morphology analysis for a text and return list of lemmas.
 
@@ -333,13 +345,15 @@ class Mystem(object):
         :type   file_path: str
         :param  file_path: alternative mode: if defined, file_path will be used to open utf8 text file for analysis.
                            Argument text is not used in this case.
+        :param  in_one_call: when file_path argument is not used, parse text at one call (for speedup on Windows...)
+        :type   in_one_call: bool
         :returns:       list of lemmas
         :rtype:         list
         """
 
         need_encode = (sys.version_info[0] < 3 and isinstance(text, str))
 
-        infos = self.analyze(text, file_path=file_path)
+        infos = self.analyze(text, file_path=file_path, in_one_call=in_one_call)
         lemmas = list(ifilter(None, imap(self._get_lemma, infos)))
 
         if need_encode is True:
